@@ -1,47 +1,6 @@
+#![allow(dead_code)]
 
-
-enum ErrorKind {
-    InvalidPattern
-}
-
-impl ErrorKind {
-    fn message<T>(self, msg : &str) -> Result<T> {
-        Err(Error{
-            kind : self,
-            msg : msg.to_string(),
-        })
-    }
-}
-
-
-struct Error {
-    kind : ErrorKind,
-    msg : String
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-type TypeId = usize;
-
-/// a hand written value
-/// note that they all have associated `TypeId`s
-enum Literal {
-    Number(String, TypeId),
-    String(String, TypeId),
-    Var(String, TypeId),
-    Struct{
-        type_id : TypeId,
-        fields : Vec<(String, Literal)>,
-    },
-    Func {
-        type_id : TypeId,
-        args : Vec<(String, TypeId)>,
-        ret : TypeId,
-        body : Box<Expr>,
-    }
-}
-
-enum Pattern {
+pub enum Pattern {
     Var(String), // creates a binding
     Number(String), // match a literal number
 
@@ -63,30 +22,47 @@ enum Pattern {
     },
 }
 
-enum Expr {
-    Literal(Literal),
+
+pub enum Expr<Ident> {
+    /// Number literal
+    Num(usize),
+    /// String literal
+    Str(Ident),
+    /// Struct literal
+    Struct{
+        name : Option<Ident>,
+        fields : Vec<(Ident, Self)>,
+    },
+    /// scope resolution operator
+    Dot(Box<Self>, Ident),
     Match{
-        var : Box<Expr>,
-        arms : Vec<(Pattern, Expr)>,
+        var : Box<Self>,
+        arms : Vec<(Pattern, Self)>,
     },
     Call{
-        func : Box<Expr>,
-        args : Vec<Expr>,
+        func : Box<Self>,
+        args : Vec<Self>,
     },
     Assign{
-        dst : Box<Expr>,
-        src : Box<Expr>,
+        dst : Box<Self>,
+        src : Box<Self>,
     },
-    Block(Vec<Expr>),
+    Block(Vec<Self>),
 }
 
-struct FuncDecl {
-    name : String,
-    args : Vec<(String, TypeId)>,
-    ret : TypeId,
-    body : Expr,
+pub struct Func<Ident, Type>{
+    pub formals : Vec<(Ident, Type)>,
+    pub ret : Type,
+    pub body : Expr<Ident>,
 }
 
+#[derive(Debug)]
+pub enum DefItem<Ident> {
+    Type(crate::types::Type<Ident>),
+}
 
-
-
+#[derive(Debug)]
+pub struct Def<Ident> {
+    pub name : Ident,
+    pub item : DefItem<Ident>,
+}

@@ -15,6 +15,8 @@ use crate::types::{Type, Env};
 
 
 /// TypeInfo holds type information about variables
+/// TODO: add Option<Ident> to the Ref type? since names aren't on the structs anymore
+/// limiting the depth of reconstruction isn't possible.
 #[derive(Clone, Debug)]
 pub enum TypeInfo<Ident> {
     /// a type that has not been inferred
@@ -29,11 +31,9 @@ pub enum TypeInfo<Ident> {
     /// this variable's type is dependent on another varible's type
     Ref(VarId),
     Enum{
-        name : Ident,
         fields : Vec<(Ident, VarId)>,
     },
     Struct{
-        name : Option<Ident>,
         fields : Vec<(Ident, VarId)>,
     },
     Func{
@@ -96,25 +96,23 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 self.insert_info_for_type(&ty)
             },
             Type::Prim(name) => Ok(self.insert_info(TypeInfo::Prim(name.clone()))),
-            Type::Enum{name, fields} => {
+            Type::Enum{fields} => {
                 let mut ret = Vec::new();
                 for (name, ty) in fields {
                     ret.push((name.clone(), self.insert_info_for_type(ty)?));
                 }
 
                 Ok(self.insert_info(TypeInfo::Enum{
-                    name : name.clone(),
                     fields : ret,
                 }))
             },
-            Type::Struct{name, fields} => {
+            Type::Struct{fields} => {
                 let mut ret = Vec::new();
                 for (name, ty) in fields {
                     ret.push((name.clone(), self.insert_info_for_type(ty)?));
                 }
 
                 Ok(self.insert_info(TypeInfo::Struct{
-                    name : name.clone(),
                     fields : ret,
                 }))
             },
@@ -184,13 +182,9 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 Ok(())
             },
             (
-                (_, Enum{name : a_name, fields : a_fields}),
-                (_, Enum{name : b_name, fields : b_fields}),
+                (_, Enum{fields : a_fields}),
+                (_, Enum{fields : b_fields}),
             )  => {
-                if a_name != b_name {
-                    return Err(format!("enum mismatch {:?} {:?}", a_name, b_name))
-                }
-
                 for (af, bf) in a_fields.iter().zip(b_fields.iter()) {
                     if af.0 != bf.0 {
                         return Err(format!("struct field name mismatch {:?} {:?}", af, bf))
@@ -202,12 +196,9 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 Ok(())
             },
             (
-                (_, Struct{name : a_name, fields : a_fields}),
-                (_, Struct{name : b_name, fields : b_fields}),
+                (_, Struct{fields : a_fields}),
+                (_, Struct{fields : b_fields}),
             )  => {
-                if a_name.is_some() && b_name.is_some() && a_name != b_name {
-                    return Err(format!("named struct mismatch {:?} {:?}", a_name, b_name))
-                }
 
                 for (af, bf) in a_fields.iter().zip(b_fields.iter()) {
                     if af.0 != bf.0 {
@@ -249,13 +240,10 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
             },
             Ref(id) => self.reconstruct(*id, unknown_as_hole, depth),
             Prim(name) => Ok(Type::Prim(name.clone())),
-            Enum{name, fields} => {
+            Enum{fields} => {
                 let depth = match depth {
                     None => None,
-                    Some(n) if n > 0 => Some(n-1),
-                    _ => {
-                        return Ok(Type::Var(name.clone()))
-                    },
+                    Some(n) => Some(n-1),
                 };
 
                 let mut ret = Vec::with_capacity(fields.len());
@@ -268,21 +256,13 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 }
 
                 Ok(Type::Enum{
-                    name : name.clone(),
                     fields : ret,
                 })
             },
-            Struct{name, fields} => {
+            Struct{fields} => {
                 let depth = match depth {
                     None => None,
-                    Some(n) if n > 0 => Some(n-1),
-                    _ => {
-                        if let Some(name) = name {
-                            return Ok(Type::Var(name.clone()))
-                        }
-
-                        depth
-                    },
+                    Some(n) => Some(n-1),
                 };
 
                 let mut ret = Vec::with_capacity(fields.len());
@@ -294,7 +274,6 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 }
 
                 Ok(Type::Struct{
-                    name : name.clone(),
                     fields : ret,
                 })
             },
@@ -330,10 +309,9 @@ mod tests {
 
             e.insert_local_type("int", Type::Prim("int"));
             e.insert_local_type("bool", Type::Prim("bool"));
-            e.insert_local_type("Option", Type::abs(
-                &["T"],
+            e.insert_local_type("Option", Type::abstract_n(
+                vec!["T"],
                 Type::Enum{
-                    name : "Option",
                     fields : vec![
                         ("Some", Type::Var("T")),
                         ("None", Type::Prim("()")),
@@ -400,7 +378,7 @@ mod tests {
 
                     x.push(($n0, $t0));
 
-                    e.insert_info(Struct{name : $name, fields : x})
+                    e.insert_info(Struct{fields : x})
                 }};
                 ($name:expr,
                  $n0:expr, $t0:expr,
@@ -410,7 +388,7 @@ mod tests {
                     x.push(($n0, $t0));
                     x.push(($n1, $t1));
 
-                    e.insert_info(Struct{name: $name, fields : x})
+                    e.insert_info(Struct{fields : x})
                 }};
                 ($name:expr,
                  $n0:expr, $t0:expr,
@@ -422,7 +400,7 @@ mod tests {
                     x.push(($n1, $t1));
                     x.push(($n2, $t2));
 
-                    e.insert_info(Struct{name : $name, fields : x})
+                    e.insert_info(Struct{fields : x})
                 }};
             }
 
@@ -433,7 +411,7 @@ mod tests {
 
                     x.push(($n0, $t0));
 
-                    e.insert_info(Enum{name : $name, fields : x})
+                    e.insert_info(Enum{fields : x})
                 }};
                 ($name:expr,
                  $n0:expr, $t0:expr,
@@ -443,7 +421,7 @@ mod tests {
                     x.push(($n0, $t0));
                     x.push(($n1, $t1));
 
-                    e.insert_info(Enum{name: $name, fields : x})
+                    e.insert_info(Enum{fields : x})
                 }};
                 ($name:expr,
                  $n0:expr, $t0:expr,
@@ -455,7 +433,7 @@ mod tests {
                     x.push(($n1, $t1));
                     x.push(($n2, $t2));
 
-                    e.insert_info(Enum{name : $name, fields : x})
+                    e.insert_info(Enum{fields : x})
                 }};
             }
 

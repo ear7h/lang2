@@ -1,5 +1,5 @@
 
-use lang2::ir::{Block};
+use lang2::ir::*;
 
 
 fn main() {

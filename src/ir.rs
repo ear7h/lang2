@@ -1,5 +1,23 @@
 #![allow(dead_code)]
 use std::fmt;
+use std::collections::HashMap;
+
+use crate::types::Type;
+
+
+#[derive(Debug)]
+pub struct Module<Ident> {
+    pub types : HashMap<Ident, Type<Ident>>,
+    pub funcs : HashMap<Ident, Func<Ident>>,
+}
+
+
+#[derive(Debug)]
+pub struct Func<Ident> {
+    name : Ident,
+    formals : Vec<(Ident, Type<Ident>)>,
+    ret : Type<Ident>,
+}
 
 #[derive(Debug)]
 pub enum Ir<T> {
@@ -123,3 +141,6 @@ impl<T : Clone> Block<T> {
         self.push(Ir::CondJump{cond, if_target, else_target});
     }
 }
+
+
+

@@ -37,17 +37,15 @@ pub struct TraitName<Ident> {
     args : Vec<Type<Ident>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Type<Ident> {
     Hole,
     Var(Ident),
     Prim(Ident),
     Enum{
-        name : Ident,
         fields : Vec<(Ident, Self)>,
     },
     Struct{
-        name : Option<Ident>,
         fields : Vec<(Ident, Self)>,
     },
     Func {
@@ -64,6 +62,7 @@ pub enum Type<Ident> {
     },
 }
 
+
 impl<Ident : Debug> Debug for Type<Ident> {
     fn fmt(&self, f : &mut fmt::Formatter<'_>) -> fmt::Result {
         use Type::*;
@@ -71,9 +70,8 @@ impl<Ident : Debug> Debug for Type<Ident> {
         match self {
             Hole => write!(f, "_"),
             Prim(s) => write!(f, "{:?}", s),
-            Enum{fields, name} => {
-                write!(f, "{:?} (", name)?;
-
+            Var(s) => write!(f, "{:?}", s),
+            Enum{fields} => {
                 let mut it = fields.iter();
 
                 if let Some((name, ty)) = it.next() {
@@ -88,11 +86,7 @@ impl<Ident : Debug> Debug for Type<Ident> {
 
                 Ok(())
             },
-            Struct{name, fields} => {
-                match name {
-                    Some(s) => write!(f, "{:?} (", s)?,
-                    None => write!(f, "(")?,
-                }
+            Struct{fields} => {
                 let mut it = fields.iter();
 
                 if let Some((name, ty)) = it.next() {
@@ -124,38 +118,46 @@ impl<Ident : Debug> Debug for Type<Ident> {
             }
             Apply{f:ff, arg} => write!(f, "({:?}) ({:?})", ff, arg),
             Abstract{formal, body} => write!(f, "\\{:?} -> {:?}", formal, body),
-            Var(s) => write!(f, "{:?}", s),
         }
     }
 }
 
 impl<Ident : Clone + Debug + Eq> Type<Ident> {
 
-    pub fn app(f : Self, args : &[Self]) -> Self {
-        match args {
-            [arg] => Self::Apply{
-                f : box f,
-                arg : box arg.clone(),
+    pub fn apply_n<It>(f : Self, args : It) -> Self
+    where
+        It : IntoIterator<Item = Self>
+    {
+        let mut args = args.into_iter();
+
+        match args.next() {
+            None => f,
+            Some(arg) => {
+                Self::apply_n(Self::Apply{
+                    f : box f,
+                    arg : box arg,
+                }, args)
             },
-            [tail @ .., arg] => Self::Apply{
-                f : box Self::app(f, tail),
-                arg : box arg.clone(),
-            },
-            _ => panic!("cannot have empty args"),
         }
     }
 
-    pub fn abs(formals : &[Ident], body : Self) -> Self {
-        match formals {
-            [formal] => Self::Abstract{
-                formal : formal.clone(),
-                body : box body,
-            },
-            [formal, tail @ ..] => Self::Abstract{
-                formal : formal.clone(),
-                body: box Self::abs(tail, body),
-            },
-            _ => panic!("cannot have empty formals"),
+    pub fn abstract_n<It>(formals : It, body : Self) -> Self
+    where
+        It : IntoIterator<Item = Ident>
+    {
+        let mut formals = formals.into_iter();
+
+        match formals.next() {
+            None => body,
+            Some(formal) => {
+                Self::abstract_n(
+                    formals,
+                    Self::Abstract{
+                        body : box body,
+                        formal: formal,
+                    }
+                )
+            }
         }
     }
 
@@ -166,12 +168,12 @@ impl<Ident : Clone + Debug + Eq> Type<Ident> {
         use Type::*;
 
         match self {
-            Enum{fields, ..} => {
+            Enum{fields} => {
                 for (_, fty) in fields {
                     fty.rewrite(name, ty)
                 }
             },
-            Struct{fields, ..} => {
+            Struct{fields} => {
                 for (_, fty) in fields {
                     fty.rewrite(name, ty)
                 }
@@ -200,6 +202,11 @@ impl<Ident : Clone + Debug + Eq> Type<Ident> {
         self.eval_rec(&ConsEnv::from(env))
     }
 
+    /// TODO: recursive types should terminate. Ex:
+    ///     enum List T {
+    ///         cons : List T,
+    ///         nil : struct{},
+    ///     }
     fn eval_rec<E : Env<Ident> + ?Sized>(&self,
                              env : &ConsEnv<'_, '_, E, Ident>,
                              ) -> Result<Type<Ident>, String> {
@@ -214,21 +221,21 @@ impl<Ident : Clone + Debug + Eq> Type<Ident> {
                     .ok_or(format!("undefined type {:?}", s))?
                     .eval_rec(env)
             },
-            Enum{name, fields} => {
+            Enum{fields} => {
                 let mut ret = Vec::with_capacity(fields.len());
                 for (name, ty) in fields {
                     ret.push((name.clone(), ty.eval_rec(env)?));
                 }
 
-                Ok(Enum{name : name.clone(), fields : ret})
+                Ok(Enum{fields : ret})
             },
-            Struct{name, fields} => {
+            Struct{fields} => {
                 let mut ret = Vec::with_capacity(fields.len());
                 for (name, ty) in fields {
                     ret.push((name.clone(), ty.eval_rec(env)?));
                 }
 
-                Ok(Struct{name : name.clone(), fields : ret})
+                Ok(Struct{fields : ret})
             },
             Func{sig} => {
                 let mut ret = Vec::with_capacity(sig.len());
@@ -321,5 +328,60 @@ where
         self.iter()
             .rev()
             .find_map(|(k, v)| (k == key).then(|| v))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn apply_n() {
+        use Type::*;
+
+        let tests = vec![
+            (
+                Type::apply_n(
+                    Var("a"),
+                    vec![Var("b"), Var("c")]
+                ),
+                Apply{
+                    f: box Apply{
+                        f : box Var("a"),
+                        arg: box Var("b")
+                    },
+                    arg: box Var("c")
+                }
+            )
+        ];
+
+        for (tc, exp) in tests {
+            assert_eq!(tc, exp)
+        }
+    }
+
+    #[test]
+    fn abstract_n() {
+        use Type::*;
+
+        let tests = vec![
+            (
+                Type::abstract_n(
+                    vec!["a", "b"],
+                    Var("c"),
+                ),
+                Abstract{
+                    formal: "a",
+                    body: box Abstract{
+                        formal : "b",
+                        body: box Var("c")
+                    },
+                }
+            )
+        ];
+
+        for (tc, exp) in tests {
+            assert_eq!(tc, exp)
+        }
     }
 }
