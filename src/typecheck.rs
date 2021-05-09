@@ -11,7 +11,7 @@ use std::hash::Hash;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::types::{Type, Env};
+use crate::types::{Type, Env, Error};
 
 
 /// TypeInfo holds type information about variables
@@ -86,12 +86,12 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
         next_id
     }
 
-    pub fn insert_info_for_type(&mut self, ty : &Type<Ident>) -> Result<VarId, String> {
+    pub fn insert_info_for_type(&mut self, ty : &Type<Ident>) -> Result<VarId, Error<Ident>> {
         match ty {
             Type::Hole => Ok(self.insert_info(TypeInfo::Unknown)),
             Type::Var(name) => {
                 let ty = self.get(name)
-                    .ok_or(format!("undefined type {:?}", name))?
+                    .ok_or(Error::Undefined(name.clone()))?
                     .clone();
                 self.insert_info_for_type(&ty)
             },
@@ -127,7 +127,7 @@ impl<Ident : Clone + fmt::Debug + Eq + Hash> Engine<Ident> {
                 }))
             },
             Type::Abstract{..} => {
-                Err(format!("cannot insert type abstraction into inference engine {:?}", ty))
+                Err(Error::CannotInferHigherKinds(ty.clone()))
             },
             Type::Apply{..} => {
                 self.insert_info_for_type(&ty.eval(self)?)

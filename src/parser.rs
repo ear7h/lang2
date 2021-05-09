@@ -14,11 +14,11 @@ use std::fmt;
 use lazy_static::lazy_static;
 use lasso::{ThreadedRodeo, Spur};
 
-type Type = crate::types::Type<Ident>;
-type Def = crate::ast::Def<Ident>;
+type Type    = crate::types::Type<Ident>;
+type Def     = crate::ast::Def<Ident>;
 type DefItem = crate::ast::DefItem<Ident>;
-type Func = crate::ast::Func<Ident, Type>;
-type Expr = crate::ast::Expr<Ident>;
+type Func    = crate::ast::Func<Ident, Type>;
+type Expr    = crate::ast::Expr<Ident>;
 
 
 
@@ -286,7 +286,7 @@ peg::parser!{grammar parser() for str {
         / expr_struct()
 
     rule func_ret_type() -> Type
-        = "->" _ ty:type_expr() { ty}
+        = "->" _ ty:type_expr() { ty }
         / _ { Type::Struct{fields : Vec::new()} }
 
     rule func_body() -> Expr

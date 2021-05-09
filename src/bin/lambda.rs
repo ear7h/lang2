@@ -4,9 +4,10 @@ use lang2::types::Type;
 fn main() {
     use Type::*;
 
-    let ty = Type::apply_n(Var("If"),
+    let ty = Type::apply_n(
+        Var("If"),
         vec![
-            Var("False"),
+            Var("True"),
             Struct{
                 fields : vec![
                     ("a", Prim("a")),
@@ -16,17 +17,18 @@ fn main() {
             },
             Func{
                 sig : vec![
-                    Prim("b"),
-                    Prim("a"),
+                    Prim("A"),
+                    Prim("B"),
                     Enum{
                         fields : vec![
-                            ("a", Prim("a")),
-                            ("b", Prim("b")),
+                            ("a", Prim("A")),
+                            ("b", Prim("A")),
                         ]
                     },
                 ]
             },
-        ]);
+        ]
+    );
 
     let env = vec![
         ("hello", Prim("hello")),
@@ -36,6 +38,14 @@ fn main() {
         ("False", Type::abstract_n(vec!["A", "B"], Var("B"))),
     ];
 
-    println!("{:?}", ty.eval(env.as_slice()));
+    match Var("If").eval(env.as_slice()) {
+        Ok(s) => println!("{}", s),
+        Err(s) => println!("{}", s),
+    };
+
+    match ty.eval(env.as_slice()) {
+        Ok(s) => println!("{}", s),
+        Err(s) => println!("{}", s),
+    };
 }
 
