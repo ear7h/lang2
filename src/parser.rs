@@ -45,6 +45,12 @@ impl fmt::Debug for Ident {
     }
 }
 
+impl fmt::Display for Ident {
+    fn fmt(&self, f : &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", IDENTS.resolve(&self.key))
+    }
+}
+
 impl PartialEq for Ident {
     fn eq(&self, other : &Ident) -> bool {
         self.key == other.key
@@ -63,6 +69,8 @@ impl AsRef<str> for Ident {
 lazy_static!{
     static ref IDENTS : Arc<ThreadedRodeo<Spur>> = Arc::new(ThreadedRodeo::new());
 }
+
+pub use parser::*;
 
 
 peg::parser!{grammar parser() for str {
@@ -120,7 +128,7 @@ peg::parser!{grammar parser() for str {
 
 
     rule type_app() -> Type
-        = x:type_value() **<1,>  __ {
+        = x:type_value() ++  __ {
             let mut it = x.into_iter();
             let f = it.next().unwrap();
             Type::apply_n(f, it)
@@ -135,16 +143,16 @@ peg::parser!{grammar parser() for str {
             "_"
             formals:type_abs_formals() _
             "=" _
-            body:type_value() {
+            body:type_expr() {
                 Type::abstract_n(formals, body)
             }
 
-    rule type_abs_named() -> (Ident, Type)
+    pub rule type_abs_named() -> (Option<Ident>, Type)
         = "type" __
-            name:ident()
+            name:ident_opt()
             formals:type_abs_formals() _
             "=" _
-            body:type_value() {
+            body:type_expr() {
                 (
                     name,
                     Type::abstract_n(formals, body)
@@ -156,6 +164,27 @@ peg::parser!{grammar parser() for str {
         = type_abs_anon()
         / type_app()
         / type_value()
+
+    pub rule repl_cmd() -> String
+        = s:$(":" (letter() / "?")*) {
+            s[1..].to_string()
+        }
+
+    pub rule repl_type() -> (Option<Ident>, Option<Type>)
+        = ty:type_abs_named() {
+            let (id, ty) = ty;
+            (id, Some(ty))
+        } / ty:type_expr() {
+            (None, Some(ty))
+        }
+
+    pub rule type_repl_line() -> (Option<String>, Option<Ident>, Option<Type>)
+        = cmd:repl_cmd()? __ ty:repl_type() {
+            let (id, ty) = ty;
+            (cmd, id, ty)
+        } / cmd:repl_cmd() {
+            (Some(cmd), None, None)
+        }
 
     /// TODO: use big numbers
     rule num8() -> usize
@@ -304,7 +333,7 @@ peg::parser!{grammar parser() for str {
     pub rule def() -> Def
         = ty:type_abs_named() {
             Def{
-                name : ty.0,
+                name : ty.0.unwrap(),
                 item : DefItem::Type(ty.1)
             }
         }
